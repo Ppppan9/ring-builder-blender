@@ -1,0 +1,36 @@
+schema_version = "1.0.0"
+
+# 买量工坊 UA Studio —— 休闲游戏买量广告一键式制作工具箱
+id = "ua_game_kit"
+version = "0.1.0"
+name = "UA Game Kit — 游戏定制底座"
+tagline = "同架构游戏定制底座：基础设施全保留，游戏玩法自由编排"
+maintainer = "Ppppan9 <ppppan9@users.noreply.github.com>"
+type = "add-on"
+
+blender_version_min = "4.5.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
+
+tags = [
+  "Animation",
+  "Lighting",
+  "Material",
+  "Physics",
+  "Render",
+  "Scene",
+]
+
+[permissions]
+network = "需要联网下载第三方前置插件"
+files = "读取导入的素材模型并写出渲染结果"
+
+[build]
+paths_exclude = [
+  "dist/",
+  "renders/",
+  "tests/",
+  "__pycache__/",
+]
