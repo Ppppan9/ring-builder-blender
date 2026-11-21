@@ -66,6 +66,7 @@ class UA_OT_build_template(bpy.types.Operator):
 
     key: bpy.props.EnumProperty(items=[
         ("example", "示例模板", "展示编排模式的最小示例"),
+        ("ring_unlock", "解环拔环", "C 环簇点按拔出→飞槽→感叹词彩带"),
     ])
 
     def execute(self, context):

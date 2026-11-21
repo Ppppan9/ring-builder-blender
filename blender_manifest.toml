@@ -1,10 +1,10 @@
 schema_version = "1.0.0"
 
-# 买量工坊 UA Studio —— 休闲游戏买量广告一键式制作工具箱
+# UA Game Kit —— 解环玩法定制版（买量工坊同架构）
 id = "ua_game_kit"
-version = "0.1.0"
-name = "UA Game Kit — 游戏定制底座"
-tagline = "同架构游戏定制底座：基础设施全保留，游戏玩法自由编排"
+version = "0.2.0"
+name = "UA Game Kit — 解环玩法定制底座"
+tagline = "解环玩法买量工具：C 环生成·拔环表演·飞槽爽点·一键成片"
 maintainer = "Ppppan9 <ppppan9@users.noreply.github.com>"
 type = "add-on"
 

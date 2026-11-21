@@ -42,7 +42,9 @@ from . import (
     game_fx_lib,
     material_lib,
     physics_lib,
+    ring_lib,
     scene_lib,
+    shot_lib,
     util,
 )
 
@@ -145,9 +147,78 @@ def build_example(context) -> int:
     return 8
 
 
+# ---------------------------------------------------------------------------
+# 解环拔环模板：花心 C 环簇 → 点按拔环 → 飞槽 → 感叹词+彩带
+# ---------------------------------------------------------------------------
+
+
+def build_ring_unlock(context) -> int:
+    """解环拔环：C 环簇入场 → 手指点按拔环回弹 → 飞入顶部同色槽 → 爽点收尾。
+
+    免搭建器一键出片；用关卡搭建器出的关卡时，改用 ring_lib.scan_rings()
+    扫出真实环对象后逐环调 ring_lib.ring_pull() 编排即可。
+    """
+    props = context.scene.uastudio
+    props.engine = "eevee"
+    props.stage = "podium"
+    props.light_mode = "three_point"
+    _common_setup(context, props)
+    scene = context.scene
+
+    cluster = ring_lib.build_demo_cluster(
+        context, colors=("green", "blue", "purple", "orange", "cyan"))
+    base_z = cluster["base_z"]
+    slots = ring_lib.make_slot_row(context, colors=("green", "blue", "purple"),
+                                   y=1.75, spacing=0.52, z=base_z + 0.02)
+
+    # Hook（1-90）：全簇弹入 + 推近
+    scene.frame_set(1)
+    util.select_only(context, [cluster["hub"]] + cluster["rings"])
+    anim_lib.entrance(context, "pop", gap=0.07)
+    anim_lib.camera_move(context, "push_in", 2.5)
+
+    # 玩法（95-210）：两次拔环 + 感叹词 + 邻环晃动
+    scene.frame_set(95)
+    util.select_only(context, [cluster["rings"][0]])
+    press = ring_lib.ring_tap(context, cluster["rings"][0], 1.5, n=1)
+    ring_lib.ring_pull(context, cluster["rings"][0], slot=slots[0], start=press)
+    ring_lib.word_pop(context, "Nice!", "green",
+                      location=(0.0, 0.4, base_z + 0.45), frame=press + 12)
+    ring_lib.slot_fill(context, slots[0], frame=press + 18)
+
+    scene.frame_set(150)
+    ring_lib.ring_wiggle(context, cluster["rings"][1:3])
+    scene.frame_set(158)
+    util.select_only(context, [cluster["rings"][1]])
+    press = ring_lib.ring_tap(context, cluster["rings"][1], 1.5, n=2)
+    ring_lib.ring_pull(context, cluster["rings"][1], slot=slots[1], start=press)
+    ring_lib.word_pop(context, "Great!", "blue",
+                      location=(0.0, 0.4, base_z + 0.45), frame=press + 12)
+    ring_lib.slot_fill(context, slots[1], frame=press + 18)
+
+    # 爽点（215-390）：最后一拔 + 白闪 + 彩带 + HUD
+    scene.frame_set(215)
+    util.select_only(context, [cluster["rings"][2]])
+    press = ring_lib.ring_tap(context, cluster["rings"][2], 1.5, n=3)
+    ring_lib.ring_pull(context, cluster["rings"][2], slot=slots[2], start=press)
+    ring_lib.word_pop(context, "Excellent!", "orange",
+                      location=(0.0, 0.4, base_z + 0.45), frame=press + 12)
+    ring_lib.slot_fill(context, slots[2], frame=press + 18)
+    ring_lib.confetti(context, 70, start_frame=press + 20)
+    game_fx_lib.white_flash(context, at_frame=press, seconds=0.15)
+
+    game_fx_lib.make_hud_score(context, "Level 12")
+    game_fx_lib.make_hud_progress(context, 0.75)
+
+    _finish_template(context, "ring_unlock")
+    scene.frame_set(1)
+    return len(cluster["rings"]) + len(cluster["clasps"]) + 2
+
+
 TEMPLATES = {
     "example": ("示例模板", build_example),
-    # TODO: 在这里注册你的游戏模板
+    "ring_unlock": ("解环拔环", build_ring_unlock),
+    # TODO: 在这里注册你的下一个游戏模板
     # "your_game": ("你的玩法名", build_your_game),
 }
 

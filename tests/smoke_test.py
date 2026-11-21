@@ -1,4 +1,4 @@
-"""买量工坊冒烟测试（headless，/tmp 运行副本）。"""
+"""UA Game Kit 冒烟测试（headless，/tmp 运行副本）。"""
 
 import math
 import os
@@ -13,7 +13,7 @@ FAILS = []
 
 
 def shot_lib_export():
-    from bl_ext.user_default.ua_studio.core import shot_lib
+    from bl_ext.user_default.ua_game_kit.core import shot_lib
     return shot_lib.export_sfx_list(bpy.context, "/tmp/ua_render/matrix")
 
 
@@ -27,7 +27,7 @@ def check(name, cond, detail=""):
 
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
-    ok = addon_utils.enable("bl_ext.user_default.ua_studio")
+    ok = addon_utils.enable("bl_ext.user_default.ua_game_kit")
     check("extension_enable", ok is not None)
 
     sc = bpy.context.scene
@@ -58,14 +58,14 @@ def main():
     bpy.ops.ua.set_stage()
     bpy.ops.ua.set_lighting()
 
-    from bl_ext.user_default.ua_studio.core import deps
+    from bl_ext.user_default.ua_game_kit.core import deps
 
     deps.scan()
     ready, total, worst = deps.summary()
     print(f"[INFO] deps: {ready}/{total} ready, worst={deps.status_text(worst)}")
     check("deps_scan", total >= 9, f"total={total}")
 
-    # ---- M2 资产 ----
+    # ---- 资产 ----
     added = []
     for key in ("cube", "ball", "gem", "coin", "capsule", "star",
                 "dice", "screw", "puzzle", "crate", "candy", "bomb"):
@@ -95,7 +95,7 @@ def main():
     bpy.ops.ua.text3d()
     check("text3d", bpy.data.objects.get("UA_Text") is not None)
 
-    # ---- M2 材质 ----
+    # ---- 材质 ----
     for ob in list(sc.objects):
         if ob.name.startswith("UA_Ball") or ob.name.startswith("UA_Ball."):
             ob.select_set(True)
@@ -107,7 +107,7 @@ def main():
     bpy.ops.ua.apply_material(key="candy")
     check("material_candy", "UA_candy" in {m.name for m in bpy.data.materials})
 
-    # ---- M3 动画与相机 ----
+    # ---- 动画与相机 ----
     bpy.ops.object.select_all(action="DESELECT")
     for ob in sc.objects:
         if ob.name.startswith("UA_Ball"):
@@ -131,14 +131,12 @@ def main():
     r = bpy.ops.ua.safety_frame()
     check("safety_frame", bpy.data.objects.get("UA_SafeFrame") is not None)
 
-    # ---- M4 物理 ----
-    # 掉落堆叠：把现有球群抬起来烤
+    # ---- 物理 ----
     r = bpy.ops.ua.drop_pile()
     check("drop_pile", r == {"FINISHED"}, str(r))
     r = bpy.ops.ua.impact()
     check("impact", r == {"FINISHED"}, str(r))
 
-    # 破碎：单独造一个方块来碎
     bpy.ops.ua.add_shape(key="cube")
     cube = bpy.context.view_layer.objects.active
     bpy.ops.object.select_all(action="DESELECT")
@@ -151,7 +149,6 @@ def main():
     check("fracture_pieces", len(pieces) >= 10,
           "pieces=" + str(len(pieces)))
 
-    # 粒子：金币喷泉
     r = bpy.ops.ua.fx_particle(kind="coins")
     check("fx_coins", r == {"FINISHED"}, str(r))
     emitters = [o for o in sc.objects if o.name.startswith("UA_FX_")]
@@ -162,7 +159,6 @@ def main():
     r = bpy.ops.ua.physics_clear()
     check("physics_clear", r == {"FINISHED"}, str(r))
 
-    # ---- M5 物理 II ----
     r = bpy.ops.ua.flag()
     check("flag", r == {"FINISHED"}, str(r))
     r = bpy.ops.ua.tablecloth()
@@ -174,12 +170,11 @@ def main():
     r = bpy.ops.ua.fluid_splash()
     check("fluid_splash", r == {"FINISHED"}, str(r))
 
-    # 低分辨率烘焙验证布料/流体真算得出缓存
     sc.uastudio.fluid_resolution = 24
     r = bpy.ops.ua.physics_bake()
     check("physics_bake2", r == {"FINISHED"}, str(r))
 
-    # ---- M6 渲染与结尾卡 ----
+    # ---- 渲染与结尾卡 ----
     sc.uastudio.out_format = "png_seq"
     r = bpy.ops.ua.endcard()
     check("endcard", r == {"FINISHED"}, str(r))
@@ -188,8 +183,7 @@ def main():
     check("endcard_animated",
           bpy.data.objects.get("UA_EndcardBtn").animation_data is not None)
 
-    # ---- M8 假玩法与投放输出 ----
-    # endcard 会切活动场景，切回主场景继续
+    # ---- 假玩法与投放输出 ----
     try:
         bpy.context.window.scene = sc
     except (AttributeError, RuntimeError):
@@ -213,7 +207,6 @@ def main():
     r = bpy.ops.ua.cleanup_project()
     check("cleanup", r == {"FINISHED"}, str(r))
 
-    # 多尺寸矩阵：压成 6 帧快速验证 3 条输出
     sc.uastudio.out_format = "mp4"
     sc.uastudio.out_dir = "/tmp/ua_render/matrix"
     sc.frame_end = 6
@@ -227,7 +220,7 @@ def main():
     cover = [f for f in os.listdir("/tmp/ua_render/matrix") if "cover" in f]
     check("export_cover", r == {"FINISHED"} and len(cover) >= 1, str(cover))
 
-    # ---- M9 分镜 / 模板 / 贴纸 ----
+    # ---- 分镜 / 模板 / 贴纸 ----
     r = bpy.ops.ua.shot_setup()
     shots = sc.uastudio.shots
     check("shot_setup", r == {"FINISHED"} and len(shots) == 4,
@@ -242,8 +235,8 @@ def main():
     except Exception as exc:
         check("sfx_list", False, str(exc))
 
-    # 三套模板构建
-    for tkey, min_obj in (("drop", 15), ("screw", 12), ("level", 20)):
+    # 模板构建（示例 + 解环）
+    for tkey, min_obj in (("example", 6), ("ring_unlock", 12)):
         r = bpy.ops.ua.build_template(key=tkey)
         main = bpy.data.scenes["Scene"]
         end = bpy.data.scenes.get("Scene_Endcard")
@@ -255,7 +248,67 @@ def main():
               and len(main.uastudio.shots) == 4 and end is not None,
               "obj=" + str(len(main.objects)) + " beats=" + str(beats))
 
-    # ---- M10 画质与风格 ----
+    main = bpy.data.scenes["Scene"]
+    ring_objs = [o for o in main.objects if o.name.startswith("UA_Ring_")]
+    slot_objs = [o for o in main.objects if o.name.startswith("UA_Slot_")]
+    word_objs = [o for o in main.objects if o.name.startswith("UA_Word")]
+    check("tpl_ring_scene", len(ring_objs) >= 5
+          and bpy.data.objects.get("UA_Hub_Ring") is not None
+          and len(slot_objs) >= 3 and len(word_objs) >= 6,
+          f"rings={len(ring_objs)} slots={len(slot_objs)} words={len(word_objs)}")
+
+    # ---- 解环玩法 ring_lib 单元 ----
+    from bl_ext.user_default.ua_game_kit.core import ring_lib
+
+    ring = ring_lib.make_c_ring(bpy.context, color="green", radius=0.34)
+    check("ring_mesh", ring is not None and len(ring.data.polygons) >= 200
+          and ring.material_slots[0].material is not None,
+          "polys=" + str(len(ring.data.polygons)))
+    check("ring_props", ring.get("rp_kind") == "ring"
+          and ring.get("ua_color") == "green")
+    clasp = ring_lib.make_clasp(bpy.context)
+    check("clasp", clasp is not None and len(clasp.data.polygons) > 0)
+    hub = ring_lib.make_hub(bpy.context, style="ring")
+    check("hub_ring", hub is not None and hub.get("rp_kind") == "prop")
+    hub2 = ring_lib.make_hub(bpy.context, style="cube")
+    check("hub_cube", hub2 is not None and hub2.name == "UA_Hub_Cube")
+    slots = ring_lib.make_slot_row(bpy.context, colors=("green", "blue", "purple"))
+    check("slots", len(slots) == 3 and all(
+        s["obj"] is not None and s["fill"] is not None for s in slots))
+    scan = ring_lib.scan_rings(bpy.context)
+    check("scan_rings", len(scan) >= 1 and scan[0]["color"] == "green",
+          "n=" + str(len(scan)))
+    ef = ring_lib.ring_pull(bpy.context, ring, slot=slots[0], start=100)
+    check("ring_pull", ring.animation_data is not None and ef >= 138, str(ef))
+    wef = ring_lib.ring_wiggle(bpy.context, [ring], start=140)
+    check("ring_wiggle", wef == 156, str(wef))
+    word = ring_lib.word_pop(bpy.context, "Nice!", "green", frame=150)
+    check("word_pop", word is not None and word.data.body == "Nice!"
+          and bpy.data.objects.get("UA_WordOutline") is not None)
+    bpy.ops.object.select_all(action="DESELECT")
+    ring.select_set(True)
+    bpy.context.view_layer.objects.active = ring
+    press = ring_lib.ring_tap(bpy.context, ring, 1.5, n=9)
+    hand9 = bpy.data.objects.get("UA_Hand_9")
+    check("ring_tap", press == 19 and hand9 is not None
+          and hand9.animation_data is not None
+          and bpy.data.objects.get("UA_TapRing_9") is not None,
+          "press=" + str(press))
+    ring_lib.slot_fill(bpy.context, slots[1], frame=160)
+    fill = bpy.data.objects.get("UA_SlotFill_blue")
+    check("slot_fill", fill is not None and fill.animation_data is not None)
+    cluster = ring_lib.build_demo_cluster(bpy.context)
+    check("cluster", len(cluster["rings"]) == 5 and len(cluster["clasps"]) == 5
+          and cluster["hub"] is not None)
+    scan2 = ring_lib.scan_rings(bpy.context)
+    # 场景里可能残留之前模板构建的环，只统计本次演示簇成员
+    in_cluster = sum(1 for r in scan2 if r["obj"] in cluster["rings"])
+    check("scan_cluster", in_cluster == 5 and len(scan2) >= 6,
+          f"cluster={in_cluster} total={len(scan2)}")
+    check("level_coll_none",
+          ring_lib.find_level_coll(bpy.context.scene) is None)
+
+    # ---- 画质与风格 ----
     sc.uastudio.quality_level = "film"
     r = bpy.ops.ua.apply_quality()
     check("quality_film", r == {"FINISHED"}
@@ -289,33 +342,13 @@ def main():
     check("dust", any(o.name.startswith("UA_FX_dust")
                       for o in sc.objects))
 
-    r = bpy.ops.ua.build_template(key="doors")
-    main = bpy.data.scenes["Scene"]
-    door_objs = [o for o in main.objects if "Door" in o.name]
-    check("tpl_doors", r == {"FINISHED"} and len(door_objs) >= 4
-          and bpy.data.scenes.get("Scene_Endcard") is not None,
-          "doors=" + str(len(door_objs)))
-
-    # ---- M13 分镜衔接与新品类 ----
-    r = bpy.ops.ua.build_template(key="sort")
-    main = bpy.data.scenes["Scene"]
-    sort_balls = [o for o in main.objects
-                  if o.name.startswith("UA_SortBall")]
-    check("tpl_sort", r == {"FINISHED"} and len(sort_balls) == 8,
-          "balls=" + str(len(sort_balls)))
-    r = bpy.ops.ua.build_template(key="jenga")
-    main = bpy.data.scenes["Scene"]
-    jenga_blocks = [o for o in main.objects
-                    if o.name.startswith("UA_Jenga")]
-    check("tpl_jenga", r == {"FINISHED"} and len(jenga_blocks) == 36,
-          "blocks=" + str(len(jenga_blocks)))
     r = bpy.ops.ua.white_flash()
     check("white_flash", bpy.data.objects.get("UA_Flash") is not None)
     r = bpy.ops.ua.bubble()
     check("bubble", any(o.name.startswith("UA_Sticker")
-                        for o in main.objects))
+                        for o in sc.objects))
 
-    # ---- M11 优化：文案刷新 / 结尾卡单渲染兜底 / 依赖缓存 ----
+    # ---- 优化：文案刷新 / 结尾卡单渲染兜底 / 依赖缓存 ----
     sc.uastudio.app_name = "新名字"
     r = bpy.ops.ua.template_refresh()
     end = bpy.data.scenes.get("Scene_Endcard")
@@ -324,18 +357,17 @@ def main():
     main.uastudio.out_dir = "/tmp/ua_render/m11_ec"
     main.uastudio.out_format = "png_seq"
     main.frame_end = 4
-    from bl_ext.user_default.ua_studio.core import render_lib as _rl
+    from bl_ext.user_default.ua_game_kit.core import render_lib as _rl
     out = _rl.render_current(bpy.context, still=False, scene=end)
     check("endcard_fallback", "/m11_ec/" in out, out)
-    from bl_ext.user_default.ua_studio.core import deps as _deps
+    from bl_ext.user_default.ua_game_kit.core import deps as _deps
     t0 = time.monotonic()
     for _i in range(50):
         _deps.scan()
     dt = time.monotonic() - t0
     check("deps_cache_fast", dt < 0.5, "50 scans " + str(round(dt, 3)) + "s")
 
-    # ---- M12 节拍检测 / 换主色 / 交付包 ----
-    # 生成测试音频：2 秒、每 0.5 秒一个鼓点
+    # ---- 节拍检测 / 换主色 / 交付包 ----
     import wave as _wave
     import struct as _struct
     _sr = 44100
@@ -359,7 +391,6 @@ def main():
     check("bgm_beats", r == {"FINISHED"} and n_beats >= 3,
           "beats=" + str(n_beats))
     sc.uastudio.mat_color = (0.1, 0.9, 0.4)
-    # 模板构建会清场景，先重建一个 candy 对象再换色
     bpy.ops.ua.add_shape(key="ball")
     bpy.ops.ua.apply_material(key="candy")
     r = bpy.ops.ua.template_recolor()
@@ -380,7 +411,6 @@ def main():
     zips = []
     for d in ("/tmp/ua_render/m12_deliv", "/tmp/ua_render/m11_ec"):
         if os.path.isdir(d):
-            # listdir 条目安全过滤：拒绝任何带分隔符/父级引用的名字
             for f in os.listdir(d):
                 if not f.endswith(".zip"):
                     continue
