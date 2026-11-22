@@ -2,13 +2,13 @@ schema_version = "1.0.0"
 
 # UA Game Kit —— 解环玩法定制版（买量工坊同架构）
 id = "ua_game_kit"
-version = "0.2.0"
-name = "UA Game Kit — 解环玩法定制底座"
-tagline = "解环玩法买量工具：C 环生成·拔环表演·飞槽爽点·一键成片"
+version = "0.3.13"
+name = "解环工坊"
+tagline = "解环关卡搭建、玩法动画与渲染"
 maintainer = "Ppppan9 <ppppan9@users.noreply.github.com>"
 type = "add-on"
 
-blender_version_min = "4.5.0"
+blender_version_min = "5.1.0"
 
 license = [
   "SPDX:GPL-3.0-or-later",
@@ -24,8 +24,8 @@ tags = [
 ]
 
 [permissions]
-network = "需要联网下载第三方前置插件"
-files = "读取导入的素材模型并写出渲染结果"
+network = "打开本机网页搭建器或按需下载物理依赖"
+files = "导入关卡 JSON 并写出渲染结果"
 
 [build]
 paths_exclude = [

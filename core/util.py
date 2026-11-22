@@ -270,7 +270,7 @@ def get_or_make_stage_material() -> bpy.types.Material:
         return mat
     mat = bpy.data.materials.new(STAGE_MATERIAL_NAME)
     mat.use_nodes = True
-    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
     if bsdf:
         bsdf.inputs["Base Color"].default_value = (0.42, 0.42, 0.45, 1.0)
         bsdf.inputs["Roughness"].default_value = 0.45
@@ -361,8 +361,8 @@ def make_world_flat(
     world = make_world_gradient(scene, color, color)
     # 纯色：直接把 Background 接 ramp 前色即可（渐变两端同色等价，但这里更直白）
     tree = world.node_tree
-    bg = tree.nodes.get("Background")
-    ramp = tree.nodes.get("ColorRamp")
+    bg = next((n for n in tree.nodes if n.type == "BACKGROUND"), None)
+    ramp = next((n for n in tree.nodes if n.type == "VALTORGB"), None)
     if bg and ramp:
         # 断开 ramp，改为直接取底色
         for link in list(tree.links):

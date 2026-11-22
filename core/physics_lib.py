@@ -43,8 +43,8 @@ def _mass_by_size(obj, density: float = 500.0) -> float:
     return max(0.05, d.x * d.y * d.z * density)
 
 
-def _new_force_field(context, name: str, loc) -> bpy.types.Object:
-    """创建力场空物体（field 是懒创建属性，必须走 field_create）。"""
+def _new_force_field(context, name: str, loc, collection=None) -> bpy.types.Object:
+    """创建力场空物体。"""
     empty = bpy.data.objects.new(name, None)
     empty.location = loc
     context.scene.collection.objects.link(empty)
@@ -52,8 +52,9 @@ def _new_force_field(context, name: str, loc) -> bpy.types.Object:
     empty.select_set(True)
     context.view_layer.objects.active = empty
     bpy.ops.object.forcefield_toggle()
-    coll = util.ensure_collection(context, "UA_Objects")
-    util.move_to_collection(empty, coll)
+    if collection is None:
+        collection = util.ensure_collection(context, "UA_Objects")
+    util.move_to_collection(empty, collection)
     return empty
 
 
@@ -83,16 +84,36 @@ def add_rigid(context, objects, rb_type: str = "ACTIVE") -> int:
     return len(objects)
 
 
-def set_stage_passive(context) -> int:
-    """把舞台物体自动设为固定碰撞体。"""
-    stage = [
-        util.find_object(n) for n in
-        ("UA_Stage_Podium", "UA_Stage_Desk", "UA_Stage_Floor")
-    ]
-    stage = [o for o in stage if o is not None]
-    if not stage:
-        raise ValueError("场景里没有舞台，先新建买量工程")
-    return add_rigid(context, stage, "PASSIVE")
+def set_stage_passive(context, *, required: bool = True, exclude=()) -> int:
+    """把当前视图层的舞台或搭建器地面设为固定碰撞体。"""
+    layer = context.view_layer
+    stage = [layer.objects.get(n) for n in
+             ("UA_Stage_Podium", "UA_Stage_Desk", "UA_Stage_Floor")]
+    grounds = {
+        obj for coll in context.scene.collection.children_recursive
+        if coll.get("rp_tag") == "ring_level_builder"
+        for obj in coll.all_objects if obj.type == "MESH" and obj.get("rp_kind") == "stage"
+    }
+    stage = [obj for obj in dict.fromkeys([*stage, *grounds])
+             if obj is not None and obj.type == "MESH" and obj not in exclude
+             and layer.objects.get(obj.name) == obj and obj.visible_get(view_layer=layer)]
+    if required and not stage:
+        raise ValueError("当前视图层没有可用地面，请添加舞台或在搭建器中生成地面")
+
+    new_bodies = [obj for obj in stage if obj.rigid_body is None]
+    if new_bodies:
+        add_rigid(context, new_bodies, "PASSIVE")
+    for obj in stage:
+        body = obj.rigid_body
+        if body is not None and (obj in new_bodies or body.type != "PASSIVE"):
+            body.type = "PASSIVE"
+            if obj in grounds:
+                # The builder floor is a plane, for which Blender supports BOX collision.
+                body.collision_shape = "BOX"
+                # 平面没有厚度，薄碰撞体会让快速碎片隧穿；margin 给它一层薄厚度。
+                body.use_margin = True
+                body.collision_margin = 0.002
+    return len(stage)
 
 
 def drop_pile(context, height: float = 3.0, stagger: bool = True) -> int:
@@ -155,17 +176,18 @@ def _ensure_cell_fracture() -> None:
 
 def fracture(context, count: int, noise: float, explode: bool,
              explode_strength: float) -> int:
-    """一键破碎：选中物体 → Cell Fracture → 碎片自动刚体（可选拆弹力场）。"""
-    _ensure_cell_fracture()
+    """一键破碎选中的网格；有地面时给碎片添加碰撞支撑。"""
     objs = [o for o in context.selected_objects if o.type == "MESH"]
     if not objs:
-        raise ValueError("请请先选中要破碎的物体")
+        raise ValueError("请先选中要破碎的物体")
+    _ensure_cell_fracture()
     ensure_world(context.scene)
-    set_stage_passive(context)
+    set_stage_passive(context, required=False, exclude=objs)
 
     total = 0
+    fragments = None
     for obj in objs:
-        before = set(bpy.data.objects)
+        before = set(context.scene.objects)
         # source 默认值在 5.x 已损坏，显式用自身顶点；
         # 顶点数少于目标碎片数时用递归细分补足
         n_verts = max(1, len(obj.data.vertices))
@@ -174,7 +196,7 @@ def fracture(context, count: int, noise: float, explode: bool,
         bpy.ops.object.select_all(action="DESELECT")
         obj.select_set(True)
         context.view_layer.objects.active = obj
-        bpy.ops.object.add_fracture_cell_objects(
+        result = bpy.ops.object.add_fracture_cell_objects(
             source={"VERT_OWN"}, source_limit=count,
             recursion=recursion, recursion_source_limit=rec_limit,
             recursion_clamp=max(count * 2, 250),
@@ -182,27 +204,32 @@ def fracture(context, count: int, noise: float, explode: bool,
             use_recenter=True, use_remove_original=True,
             use_sharp_edges=True, use_island_split=True,
         )
-        pieces = [o for o in bpy.data.objects if o not in before]
+        pieces = [o for o in context.scene.objects if o not in before and o.type == "MESH"]
+        if "FINISHED" not in result or not pieces:
+            raise RuntimeError("破碎没有生成碎片，请检查所选网格")
+        if fragments is None:
+            fragments = bpy.data.collections.new("UA_Fracture")
+            context.scene.collection.children.link(fragments)
         for p in pieces:
-            util.move_to_collection(p, util.ensure_collection(context, "UA_Objects"))
+            util.move_to_collection(p, fragments)
         total += len(pieces)
         if explode:
-            add_explosion_force(context, pieces, explode_strength)
+            add_explosion_force(context, pieces, explode_strength, fragments)
         add_rigid(context, pieces, "ACTIVE")
     return total
 
 
-def add_explosion_force(context, pieces, strength: float) -> None:
-    """给碎片群中心加爆开力场（EXPLODE 类型）。"""
+def add_explosion_force(context, pieces, strength: float, collection=None) -> None:
+    """给碎片群中心加一个向外推的点力场。"""
     if not pieces:
         return
     cx = sum(p.location.x for p in pieces) / len(pieces)
     cy = sum(p.location.y for p in pieces) / len(pieces)
     cz = sum(p.location.z for p in pieces) / len(pieces)
-    empty = _new_force_field(context, "UA_ExplodeForce", (cx, cy, cz))
-    # 5.x 无 EXPLODE 场型，用负强度 FORCE（排斥）实现爆开
+    empty = _new_force_field(context, "UA_ExplodeForce", (cx, cy, cz), collection)
+    # Positive point-force strength repels; negative strength attracts.
     empty.field.type = 'FORCE'
-    empty.field.strength = -abs(strength) * 100
+    empty.field.strength = abs(strength) * 100
     empty.field.shape = 'POINT'
 
 

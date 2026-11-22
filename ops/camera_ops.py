@@ -48,4 +48,26 @@ class UA_OT_safety_frame(bpy.types.Operator):
         return {"FINISHED"}
 
 
-classes = (UA_OT_cam_move, UA_OT_safety_frame)
+class UA_OT_cam_from_view(bpy.types.Operator):
+    """将活动相机对齐到按钮所在的 3D 视口"""
+
+    bl_idname = "ua.cam_from_view"
+    bl_label = "当前视角设为相机新视角"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return (not bpy.app.background and context.area is not None
+                and context.area.type == "VIEW_3D" and context.scene.camera is not None)
+
+    def execute(self, context):
+        region = next((r for r in context.area.regions if r.type == "WINDOW"), None)
+        if region is not None:
+            with context.temp_override(region=region):
+                if bpy.ops.view3d.camera_to_view.poll():
+                    return bpy.ops.view3d.camera_to_view()
+        self.report({"WARNING"}, "请退出相机视图后再对齐")
+        return {"CANCELLED"}
+
+
+classes = (UA_OT_cam_move, UA_OT_safety_frame, UA_OT_cam_from_view)
