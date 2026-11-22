@@ -4,8 +4,9 @@ from pathlib import Path
 
 import addon_utils
 import bpy
+from mathutils import Vector
 
-from bl_ext.user_default.ua_game_kit.core import builder
+from bl_ext.user_default.ua_game_kit.core import builder, ring_shatter
 
 EXTENSION = "bl_ext.user_default.ua_game_kit"
 FIXTURE = Path(__file__).with_name("ring_level.json")
@@ -16,9 +17,47 @@ def grains(coll, rid):
             if obj.get("ua_sand_shatter") and obj.get("rp_ring") == rid]
 
 
-def eval_pos(obj, frame):
+def eval_matrix(obj, frame):
     bpy.context.scene.frame_set(frame)
-    return obj.evaluated_get(bpy.context.evaluated_depsgraph_get()).matrix_world.translation.copy()
+    return obj.evaluated_get(bpy.context.evaluated_depsgraph_get()).matrix_world.copy()
+
+
+def eval_pos(obj, frame):
+    return eval_matrix(obj, frame).translation
+
+
+def carriers(coll):
+    return sorted((o for o in coll.all_objects if o.get("ua_sand_carrier")),
+                  key=lambda o: o["ua_sand_section"])
+
+
+def assert_crumble(scene, section, grains):
+    detach = section["ua_release_frame"]
+    start, end = section["ua_sand_crumble"], section["ua_sand_end"]
+    assert detach + 2 < start < end - 2
+    batch = [o for o in grains if o["ua_sand_source"] == section]
+    assert len(batch) > 1
+    assert min(o["ua_release_frame"] for o in batch) == start
+    assert max(o["ua_release_frame"] for o in batch) == end - 1
+    before = eval_matrix(section, detach)
+    falling = eval_matrix(section, start - 1)
+    assert not section.hide_render and section.visible_get()
+    assert all(o.hide_render and not o.visible_get() for o in batch)
+    assert before.translation.z - falling.translation.z > 0.005
+    assert before.to_quaternion().rotation_difference(falling.to_quaternion()).angle > 0.05
+    assert (falling.to_scale() - before.to_scale()).length < 1e-5
+    for obj in batch:
+        release = obj["ua_release_frame"]
+        scene.frame_set(release - 1)
+        assert obj.hide_render
+        source_pose = eval_matrix(section, release)
+        point = source_pose @ Vector(obj["ua_sand_local_birth"])
+        keyed_birth = Vector([keys[-1].co.y for keys in ring_shatter._keyed_components(obj, "location", 3)[1]])
+        assert (keyed_birth - point).length < 1e-5
+        assert not obj.hide_render and obj.visible_get() and not section.hide_render
+    assert eval_matrix(section, end - 1).to_scale().length < 0.12 * before.to_scale().length
+    scene.frame_set(end)
+    assert section.hide_render and all(not o.hide_render for o in batch)
 
 
 def select(obj):
@@ -42,26 +81,40 @@ def main():
     settings.shatter_effect = "sand"
     settings.shatter_timing = "all"
     select(ring)
-    frame = 50
-    scene.frame_set(frame)
+    trigger = 50
+    detach = trigger + 1
+    scene.frame_set(trigger)
     assert bpy.ops.ua.ring_shatter() == {"FINISHED"}
     pieces = grains(coll, "r1")
-    assert len(pieces) == 80 and all(obj["ua_release_frame"] == frame for obj in pieces)
+    sections = carriers(coll)
+    assert scene.frame_current == trigger
+    assert not ring.hide_render and ring.visible_get()
+    assert all(o.hide_render and not o.visible_get() for o in [*pieces, *sections])
+    assert len(pieces) == 80 and len(sections) > 1
+    assert {o["ua_release_frame"] for o in sections} == {detach}
+    scene.frame_set(detach)
+    assert ring.hide_render and all(o.visible_get() for o in sections)
+    assert all(o.hide_render for o in pieces)
+    assert_crumble(scene, sections[0], pieces)
+    frame = min(o["ua_release_frame"] for o in pieces)
+    assert len({o["ua_release_frame"] for o in pieces}) > 2
     # 细小圆粒，不是弧形碎块：颗粒直径远小于环管粗细
     assert max(obj.dimensions.length for obj in pieces) < 0.02, \
         max(obj.dimensions.length for obj in pieces)
     floor = next(obj for obj in coll.all_objects if obj.get("ua_upright_part") == "floor")
     dust = [obj for obj in coll.all_objects if obj.get("ua_sand_dust")]
-    assert len(dust) >= 24 and all(obj["ua_release_frame"] == frame for obj in dust)
+    assert len(dust) >= 24
     sample = dust[0]
     dust_end = sample["ua_dust_end"]
     source = sample["ua_dust_source"]
+    release = source["ua_release_frame"]
     assert source in pieces and sample.constraints[0].target == source
-    scene.frame_set(frame - 1)
+    assert sample["ua_release_frame"] == release
+    scene.frame_set(release - 1)
     assert sample.hide_render
-    assert (eval_pos(sample, frame) - eval_pos(source, frame)).length < 1e-5
+    assert (eval_pos(sample, release) - eval_pos(source, release)).length < 1e-5
     assert not sample.hide_render
-    assert (eval_pos(sample, frame + 5) - eval_pos(source, frame + 5)).length < 0.06
+    assert (eval_pos(sample, release + 5) - eval_pos(source, release + 5)).length < 0.06
     scene.frame_set(dust_end - 1)
     assert not sample.hide_render
     scene.frame_set(dust_end)
@@ -69,31 +122,30 @@ def main():
     assert floor.rigid_body and floor.rigid_body.type == "PASSIVE"
     assert scene.rigidbody_world.point_cache.is_baked
     scene.frame_set(frame - 1)
-    assert not ring.hide_render and all(obj.hide_render for obj in pieces)
+    assert ring.hide_render and all(obj.hide_render for obj in pieces)
+    assert all(o.visible_get() for o in sections)
     scene.frame_set(frame)
-    assert ring.hide_render and all(not obj.hide_render for obj in pieces)
-    floor_z = floor.matrix_world.translation.z + max(v.co.z for v in floor.data.vertices)
-    rest_width = 2 * max((p.x ** 2 + p.y ** 2) ** 0.5
-                         for p in (eval_pos(obj, frame) for obj in pieces))
-    assert eval_pos(pieces[0], frame + 8).z < eval_pos(pieces[0], frame).z
+    assert 0 < sum(not o.hide_render for o in pieces) < len(pieces)
+    floor_z = max((floor.matrix_world @ v.co).z for v in floor.data.vertices)
+    releases = {o.name: o["ua_release_frame"] for o in pieces}
+    assert eval_pos(source, release + 8).z < eval_pos(source, release).z
     late = [eval_pos(obj, frame + 80) for obj in pieces]
     bottom = min(p.z for p in late)
     assert floor_z - 0.02 < bottom < floor_z + 0.05, (bottom, floor_z)
-    late_width = 2 * max((p.x ** 2 + p.y ** 2) ** 0.5 for p in late)
-    assert late_width > 1.2 * rest_width, (late_width, rest_width)
+    assert max(p.z for p in late) < floor_z + 0.08, "All grains should settle close to the floor"
     settled = [eval_pos(obj, frame + 86) for obj in pieces]
     assert all((a - b).length < 5e-3 for a, b in zip(late, settled))
-    print(f"[PASS] sand falls from frame {frame}, spreads and piles on the upright floor")
+    print("[PASS] overall mode shows falling solid pieces before the grains appear and land")
 
     assert bpy.ops.ua.ring_pose() == {"FINISHED"}
     # 平铺后沙粒的世界轨迹经逆变换映射，位置不再对应地面范围；校验结构而非物理落点。
     assert len(grains(coll, "r1")) == 80
-    assert all(obj["ua_release_frame"] == frame for obj in pieces)
+    assert {o.name: o["ua_release_frame"] for o in pieces} == releases
     assert scene.rigidbody_world.point_cache.is_baked
     assert bpy.ops.ua.ring_pose() == {"FINISHED"}
     upright_bottom = min(eval_pos(obj, frame + 80).z for obj in pieces)
     assert floor_z - 0.02 < upright_bottom < floor_z + 0.05
-    assert all(obj["ua_release_frame"] == frame for obj in pieces)
+    assert {o.name: o["ua_release_frame"] for o in pieces} == releases
     print("[PASS] pose switches move the rest pose and re-simulate on the matching floor")
 
     settings.shatter_count = 6
@@ -122,35 +174,31 @@ def main():
     settings.shatter_effect = "sand"
     settings.shatter_timing = "sweep"
     settings.shatter_frames = 24
-    scene.frame_set(40)
+    trigger = 40
+    handoff = trigger + 1
+    scene.frame_set(trigger)
     assert bpy.ops.ua.ring_shatter() == {"FINISHED"}
     pieces = grains(coll, "r1")
     assert len(pieces) == 80
-    releases = sorted(obj["ua_release_frame"] for obj in pieces)
-    assert releases[0] == 40 and releases[-1] == 40 + 24
-    sections = sorted((o for o in coll.all_objects if "ua_sand_section" in o),
-                      key=lambda o: o["ua_sand_section"])
-    assert len(sections) == len(set(releases)) == settings.shatter_count
-    scene.frame_set(39)
-    assert not ring.hide_render and all(o.hide_render for o in [*sections, *pieces])
-    scene.frame_set(40)
-    assert ring.hide_render
-    assert sum(not o.hide_render for o in sections) == len(sections) - 1
-    assert 0 < sum(not o.hide_render for o in pieces) < len(pieces) / 2
+    sections = carriers(coll)
+    detach_frames = [o["ua_release_frame"] for o in sections]
+    assert detach_frames == sorted(set(detach_frames))
+    assert detach_frames[0] == handoff and detach_frames[-1] == handoff + 24
+    assert len(sections) == settings.shatter_count
+    assert scene.frame_current == trigger
+    assert not ring.hide_render and ring.visible_get()
+    assert all(o.hide_render and not o.visible_get() for o in [*sections, *pieces])
+    scene.frame_set(handoff)
+    assert ring.hide_render and not ring.visible_get()
+    assert all(not o.hide_render and o.visible_get() for o in sections)
+    assert all(o.hide_render for o in pieces)
+    assert (eval_matrix(sections[-1], handoff) - eval_matrix(sections[-1], detach_frames[-1]))[0].length < 1e-5
     for section in sections:
-        batch = [o for o in pieces if o["ua_sand_source_section"] == section["ua_sand_section"]]
-        assert batch
-        release = section["ua_release_frame"]
-        assert {o["ua_release_frame"] for o in batch} == {release}
-        scene.frame_set(release - 1)
-        assert all(o.hide_render for o in batch)
-        if release > 40:
-            assert not section.hide_render
-        scene.frame_set(release)
-        assert section.hide_render and all(not o.hide_render for o in batch)
+        assert_crumble(scene, section, pieces)
     floor = next(obj for obj in coll.all_objects if obj.get("ua_upright_part") == "floor")
-    floor_top = floor.matrix_world.translation.z + max(v.co.z for v in floor.data.vertices)
-    late = min(eval_pos(obj, 40 + 24 + 60).z for obj in pieces)
+    floor_top = max((floor.matrix_world @ v.co).z for v in floor.data.vertices)
+    late_frame = max(o["ua_release_frame"] for o in pieces) + 60
+    late = min(eval_pos(obj, late_frame).z for obj in pieces)
     assert floor_top - 0.02 < late < floor_top + 0.05, (late, floor_top)
     dust = [o for o in coll.all_objects if o.get("ua_sand_dust")]
     assert all(o["ua_dust_source"] in pieces and o["ua_release_frame"]
@@ -166,9 +214,18 @@ def main():
     reverse = sorted((o for o in coll.all_objects if "ua_sand_section" in o),
                      key=lambda o: o["ua_sand_section"])
     assert len(reverse) == len(sections) and len(grains(coll, "r1")) == 80
-    assert reverse[-1]["ua_release_frame"] == scene.frame_start
-    assert reverse[0]["ua_release_frame"] == scene.frame_start + settings.shatter_frames
-    assert reverse[-1].hide_render and not reverse[0].hide_render
+    assert not ring.hide_render and ring.visible_get()
+    assert all(o.hide_render and not o.visible_get() for o in [*reverse, *grains(coll, "r1")])
+    handoff = scene.frame_start + 1
+    assert reverse[-1]["ua_release_frame"] == handoff
+    assert reverse[0]["ua_release_frame"] == handoff + settings.shatter_frames
+    scene.frame_set(handoff)
+    assert all(o.visible_get() for o in reverse)
+    assert all(o.hide_render for o in grains(coll, "r1"))
+    assert_crumble(scene, reverse[-1], grains(coll, "r1"))
+    assert reverse[0].visible_get()
+    scene.frame_set(scene.frame_start)
+    assert not ring.hide_render and ring.visible_get()
     assert not any(o.get("ua_sand_dust") for o in coll.all_objects)
     print("[PASS] reverse sweep starts on the opposite tip, replaces old pieces and respects dust off")
 

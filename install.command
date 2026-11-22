@@ -4,7 +4,7 @@ set -e
 
 BLENDER="/Applications/Blender.app/Contents/MacOS/Blender"
 SRC="$(cd "$(dirname "$0")" && pwd)"
-ZIP="$SRC/dist/ring-workshop/ua_game_kit-0.3.13.zip"
+ZIP="$SRC/dist/ring-workshop/ua_game_kit-0.3.15.zip"
 
 if [ ! -f "$ZIP" ]; then
     printf '%s\n' '未找到合并版安装包。请使用合并版 ZIP，或按 README 从源码构建。' >&2

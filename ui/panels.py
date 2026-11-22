@@ -184,7 +184,11 @@ class UA_PT_animation(_UABase, bpy.types.Panel):
         col.operator("ua.ring_clear", icon="X")
         box = layout.box()
         box.enabled = has_level
-        box.label(text=f"破碎起始帧：{context.scene.frame_current}", icon="MOD_EXPLODE")
+        frame = context.scene.frame_current
+        if settings.shatter_effect == "sand":
+            box.label(text=f"第 {frame + 1} 帧开始脱落", icon="MOD_EXPLODE")
+        else:
+            box.label(text=f"破碎起始帧：{frame}", icon="MOD_EXPLODE")
         box.prop(settings, "shatter_target")
         box.prop(settings, "shatter_effect", expand=True)
         box.prop(settings, "shatter_timing", expand=True)
