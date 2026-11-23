@@ -16,13 +16,14 @@ from . import util
 # ---------------------------------------------------------------------------
 
 
-def apply_size(context, props) -> None:
-    """应用比例/帧率/片长；若已有 UA 相机则同步机位。"""
+def apply_size(context, props, *, update_camera=True) -> None:
+    """应用比例/帧率/片长；按需同步普通 UA 相机。"""
     scene = context.scene
     util.set_resolution(scene, props.aspect)
     util.set_fps(scene, props.fps)
     util.set_duration(scene, props.duration)
-    _ensure_camera(context, props.aspect)
+    if update_camera:
+        _ensure_camera(context, props.aspect)
 
 
 # ---------------------------------------------------------------------------

@@ -82,15 +82,6 @@ def render_current(context, still: bool = False, scene=None,
     """
     scene = scene or context.scene
     props = scene.uastudio
-    # 结尾卡场景单渲染兜底：输出设置跟随主场景（避免落默认 //renders）
-    from . import endcard_lib
-    if scene.name == endcard_lib.ENDCARD_SCENE:
-        main = next((s for s in bpy.data.scenes
-                     if s.name != endcard_lib.ENDCARD_SCENE), None)
-        if main is not None:
-            props.out_dir = main.uastudio.out_dir
-            props.out_format = main.uastudio.out_format
-            props.transparent = main.uastudio.transparent
     apply_output_preset(
         scene, props.out_format, props.out_dir, props.transparent
     )
@@ -222,7 +213,7 @@ def export_cover(context, frame: int) -> str:
 def batch_render(context) -> int:
     """批量渲染全场景（每场景独立输出，命名规范自动落盘）。
 
-    输出设置以「主场景」（第一个非结尾卡场景）为准，统一同步到其余场景。
+    输出设置以当前场景为准，旧工程的自动生成结尾卡不参与批量渲染。
     场景数 ≤2 时双路并行：主线程先预置好两场景的输出并保存单份副本，
     再用线程池同时跑两个 CLI 子进程（子进程独立于 bpy 主线程，安全）；
     更多场景退回串行避免 GPU 争抢。
@@ -230,14 +221,11 @@ def batch_render(context) -> int:
     import time
     from concurrent.futures import ThreadPoolExecutor
 
-    from . import endcard_lib
-
-    ref = next(
-        (s for s in bpy.data.scenes if s.name != endcard_lib.ENDCARD_SCENE),
-        context.scene,
-    )
+    ref = context.scene
     ref_props = ref.uastudio
-    scenes = list(bpy.data.scenes)
+    scenes = [s for s in bpy.data.scenes if s.camera and s.name != "Scene_Endcard"]
+    if not scenes:
+        raise RuntimeError("没有可批量渲染的场景（请先设置相机）")
     errors: list[str] = []
     timings: dict[str, float] = {}
 
@@ -249,6 +237,7 @@ def batch_render(context) -> int:
             s_props.out_dir = ref_props.out_dir
             s_props.out_format = ref_props.out_format
             s_props.transparent = ref_props.transparent
+        apply_output_preset(scene, s_props.out_format, s_props.out_dir, s_props.transparent)
         name = _safe_name(scene.name)
         out_abs = bpy.path.abspath(
             s_props.out_dir.rstrip("/") + "/" + name + "_frame_"

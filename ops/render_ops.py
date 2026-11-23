@@ -1,10 +1,10 @@
-"""⑦⑧ 渲染与结尾卡 Operator。"""
+"""⑦ 渲染 Operator。"""
 
 from __future__ import annotations
 
 import bpy
 
-from ..core import render_lib, endcard_lib
+from ..core import render_lib
 
 
 class UA_OT_render_current(bpy.types.Operator):
@@ -64,49 +64,6 @@ class UA_OT_batch_render(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class UA_OT_endcard(bpy.types.Operator):
-    """一键结尾卡"""
-
-    bl_idname = "ua.endcard"
-    bl_label = "一键结尾卡"
-    bl_options = {"REGISTER", "UNDO"}
-
-    def execute(self, context):
-        props = context.scene.uastudio
-        try:
-            n = endcard_lib.make_endcard(
-                context, props.endcard_template,
-                props.logo_path, props.app_name, props.cta_text,
-            )
-        except (ValueError, RuntimeError) as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
-        if props.endcard_animate:
-            endcard_lib.animate_endcard(context)
-        self.report({"INFO"}, str(n) + " 个结尾卡元素已创建")
-        return {"FINISHED"}
-
-
-class UA_OT_logo_import(bpy.types.Operator):
-    """导入 logo 图片（png 透明底最佳）"""
-
-    bl_idname = "ua.logo_import"
-    bl_label = "导入 logo"
-    bl_options = {"REGISTER", "UNDO"}
-
-    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
-    filter_glob: bpy.props.StringProperty(default="*.png;*.jpg;*.jpeg;*.webp")
-
-    def invoke(self, context, event):
-        context.window_manager.fileselect_add(self)
-        return {"RUNNING_MODAL"}
-
-    def execute(self, context):
-        context.scene.uastudio.logo_path = self.filepath
-        self.report({"INFO"}, "logo 已设置，点结尾卡模板按钮生成")
-        return {"FINISHED"}
-
-
 class UA_OT_size_matrix(bpy.types.Operator):
     """多尺寸矩阵：9:16 / 1:1 / 16:9 各渲染一条（机位自动适配）"""
 
@@ -147,6 +104,4 @@ classes = (
     UA_OT_batch_render,
     UA_OT_size_matrix,
     UA_OT_export_cover,
-    UA_OT_endcard,
-    UA_OT_logo_import,
 )
